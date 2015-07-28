@@ -14,9 +14,38 @@
  * limitations under the License.
  */
 
-#include "mount.h"
+#include <fuse.h>
+#include <string>
+#include <bcc/bpf_common.h>
 
-int main(int argc, char **argv) {
-  bcc::Mount obj;
-  return obj.run(argc, argv);
+#include "mount.h"
+#include "string_util.h"
+
+using std::map;
+using std::string;
+using std::unique_ptr;
+
+namespace bcc {
+
+Link::Link(Mount *mount, mode_t mode, const string &dst)
+    : Inode(mount, link_e), dst_(dst) {
 }
+
+Inode * Link::leaf(Path *path) {
+  return this;
+}
+
+
+int Link::getattr(struct stat *st) {
+  st->st_mode = S_IFLNK | 0777;
+  st->st_nlink = 1;
+  st->st_size = dst_.size();
+  return 0;
+}
+
+int Link::readlink(char *buf, size_t size) {
+  strncpy(buf, dst_.c_str(), size);
+  return 0;
+}
+
+}  // namespace bcc
