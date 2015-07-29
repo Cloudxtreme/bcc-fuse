@@ -27,8 +27,8 @@ using std::unique_ptr;
 
 namespace bcc {
 
-Link::Link(Mount *mount, mode_t mode, const string &dst)
-    : Inode(mount, link_e), dst_(dst) {
+Link::Link(mode_t mode, const string &dst)
+    : Inode(link_e), dst_(dst) {
 }
 
 int Link::getattr(struct stat *st) {

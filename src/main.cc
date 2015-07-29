@@ -14,9 +14,16 @@
  * limitations under the License.
  */
 
+#include <stdio.h>
+#include <unistd.h>
+
 #include "fs/mount.h"
 
 int main(int argc, char **argv) {
   bcc::Mount obj;
+  if (chdir(argv[argc - 1]) < 0) {
+    perror("chdir");
+    return -1;
+  }
   return obj.run(argc, argv);
 }

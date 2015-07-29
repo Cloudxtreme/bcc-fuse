@@ -29,7 +29,7 @@ using std::thread;
 
 namespace bcc {
 
-File::File(Mount *mount) : Inode(mount, file_e) {
+File::File() : Inode(file_e) {
 }
 
 int File::getattr(struct stat *st) {
@@ -89,11 +89,12 @@ int StatFile::read(char *buf, size_t size, off_t offset, struct fuse_file_info *
   return read_helper(data_, buf, size, offset, fi);
 }
 
-FunctionFile::FunctionFile(Mount *mount, int fd)
-    : File(mount), fd_(fd) {
+FunctionFile::FunctionFile(int fd)
+    : File(), fd_(fd) {
   auto fn = [&] () {
-    bcc_send_fd("/var/run/bcc-fd", fd_);
+    bcc_send_fd("/tmp/bcc/bcc-fd", fd_);
   };
+  // todo: make this lighter weight - select loop and/or on-demand
   thread_ = thread(fn);
 }
 

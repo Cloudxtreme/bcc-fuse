@@ -32,17 +32,20 @@ using std::vector;
 Mount::Mount() : flags_(0) {
   log_ = fopen("/tmp/bcc-fuse.log", "w");
   oper_.reset(new fuse_operations);
-  root_.reset(new RootDir(this, 0755));
+  root_.reset(new RootDir(0755));
   memset(&*oper_, 0, sizeof(*oper_));
   oper_->getattr = getattr_;
   oper_->readdir = readdir_;
   oper_->mkdir = mkdir_;
+  oper_->mknod = mknod_;
+  oper_->unlink = unlink_;
   oper_->open = open_;
   oper_->read = read_;
   oper_->write = write_;
   oper_->truncate = truncate_;
   oper_->flush = flush_;
   oper_->readlink = readlink_;
+  oper_->ioctl = ioctl_;
 }
 
 Mount::~Mount() {
@@ -186,6 +189,13 @@ int Mount::readlink(const char *path, char *buf, size_t size) {
     return -ENOENT;
   if (Link *link = dynamic_cast<Link *>(leaf))
     return link->readlink(buf, size);
+  return -EINVAL;
+}
+
+
+int Mount::ioctl(const char *path, int cmd, void *arg, struct fuse_file_info *fi,
+                 unsigned int flags, void *data) {
+  log("ioctl: %s\n", path);
   return -EINVAL;
 }
 

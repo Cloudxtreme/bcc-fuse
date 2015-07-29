@@ -21,8 +21,8 @@
 
 namespace bcc {
 
-Socket::Socket(Mount *mount, mode_t mode, dev_t rdev)
-  : Inode(mount, socket_e), rdev_(rdev) {
+Socket::Socket(mode_t mode, dev_t rdev)
+  : Inode(socket_e), rdev_(rdev) {
 }
 
 int Socket::getattr(struct stat *st) {

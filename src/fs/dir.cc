@@ -30,8 +30,8 @@ using std::unique_ptr;
 
 namespace bcc {
 
-Dir::Dir(Mount *mount, mode_t mode)
-    : Inode(mount, dir_e), n_files_(0), n_dirs_(0), mode_(mode) {
+Dir::Dir(mode_t mode)
+    : Inode(dir_e), n_files_(0), n_dirs_(0), mode_(mode) {
 }
 
 Inode * Dir::leaf(Path *path) {
@@ -51,7 +51,6 @@ int Dir::getattr(struct stat *st) {
 
 int Dir::readdir(void *buf, fuse_fill_dir_t filler, off_t offset,
                  struct fuse_file_info *fi) {
-  //log("Dir::readdir [%s] [%s]\n", path->cur(), path->next());
   filler(buf, ".", nullptr, 0);
   filler(buf, "..", nullptr, 0);
   for (auto it = children_.begin(); it != children_.end(); ++it)
@@ -61,7 +60,7 @@ int Dir::readdir(void *buf, fuse_fill_dir_t filler, off_t offset,
 
 int Dir::mknod(const char *name, mode_t mode, dev_t rdev) {
   if (S_ISSOCK(mode))
-    add_child(name, make_unique<Socket>(mount(), mode, rdev));
+    add_child(name, make_unique<Socket>(mode, rdev));
   else
     return -EPERM;
   return 0;
@@ -91,14 +90,14 @@ int RootDir::mkdir(const char *path, mode_t mode) {
   auto it = children_.find(path);
   if (it != children_.end())
     return -EEXIST;
-  add_child(path, make_unique<ProgramDir>(mount(), mode));
+  add_child(path, make_unique<ProgramDir>(mode));
   return 0;
 }
 
-ProgramDir::ProgramDir(Mount *mount, mode_t mode)
-    : Dir(mount, mode), bpf_module_(nullptr) {
-  add_child("source", make_unique<SourceFile>(mount, this));
-  add_child("valid", make_unique<StatFile>(mount, "0\n"));
+ProgramDir::ProgramDir(mode_t mode)
+    : Dir(mode), bpf_module_(nullptr) {
+  add_child("source", make_unique<SourceFile>(this));
+  add_child("valid", make_unique<StatFile>("0\n"));
 }
 
 ProgramDir::~ProgramDir() {
@@ -108,7 +107,7 @@ ProgramDir::~ProgramDir() {
 int ProgramDir::load(const char *text) {
   StatFile *validf = dynamic_cast<StatFile *>(&*children_["valid"]);
   if (!validf) return 1;
-  void *m = bpf_module_create_from_string(text, mount_->flags());
+  void *m = bpf_module_create_from_string(text, 0);
   if (!m) {
     validf->set_data("0\n");
     return 1;
@@ -116,19 +115,19 @@ int ProgramDir::load(const char *text) {
   bpf_module_ = m;
   validf->set_data("1\n");
 
-  auto functions = make_unique<Dir>(mount(), mode_);
+  auto functions = make_unique<Dir>(mode_);
   size_t num_functions = bpf_num_functions(bpf_module_);
   for (size_t i = 0; i < num_functions; ++i) {
     functions->add_child(bpf_function_name(bpf_module_, i),
-                         make_unique<FunctionDir>(mount(), mode_, bpf_module_, i));
+                         make_unique<FunctionDir>(mode_, bpf_module_, i));
   }
   add_child("functions", move(functions));
 
-  auto maps = make_unique<Dir>(mount(), mode_);
+  auto maps = make_unique<Dir>(mode_);
   size_t num_tables = bpf_num_tables(bpf_module_);
   for (size_t i = 0; i < num_tables; ++i) {
     maps->add_child(bpf_table_name(bpf_module_, i),
-                    make_unique<MapDir>(mount(), mode_, bpf_table_fd_id(bpf_module_, i)));
+                    make_unique<MapDir>(mode_, bpf_table_fd_id(bpf_module_, i)));
   }
   add_child("maps", move(maps));
   return 0;
@@ -144,9 +143,9 @@ void ProgramDir::unload() {
   bpf_module_ = nullptr;
 }
 
-FunctionDir::FunctionDir(Mount *mount, mode_t mode, void *bpf_module, int id)
-    : Dir(mount, mode), bpf_module_(bpf_module), id_(id) {
-  add_child("type", make_unique<FunctionTypeFile>(mount, this));
+FunctionDir::FunctionDir(mode_t mode, void *bpf_module, int id)
+    : Dir(mode), bpf_module_(bpf_module), id_(id) {
+  add_child("type", make_unique<FunctionTypeFile>(this));
 }
 
 int FunctionDir::load(const string &type) {
@@ -166,10 +165,10 @@ int FunctionDir::load(const string &type) {
                          bpf_function_size_id(bpf_module_, id_), bpf_module_license(bpf_module_),
                          bpf_module_kern_version(bpf_module_), log_buf, sizeof(log_buf));
   if (fd < 0) {
-    add_child("error", make_unique<StatFile>(mount(), log_buf));
+    add_child("error", make_unique<StatFile>(log_buf));
     return -1;
   }
-  add_child("fd", make_unique<FunctionFile>(mount(), fd));
+  add_child("fd", make_unique<FunctionFile>(fd));
   return 0;
 }
 
@@ -177,10 +176,10 @@ void FunctionDir::unload() {
   remove_child("fd");
 }
 
-MapDir::MapDir(Mount *mount, mode_t mode, int fd)
-    : Dir(mount, mode), fd_(fd) {
-  add_child("fd", make_unique<StatFile>(mount, std::to_string(fd_) + "\n"));
-  add_child("link", make_unique<Link>(mount, mode_, "/tmp/bcc-fd-" + std::to_string(fd_)));
+MapDir::MapDir(mode_t mode, int fd)
+    : Dir(mode), fd_(fd) {
+  add_child("fd", make_unique<StatFile>(std::to_string(fd_) + "\n"));
+  add_child("link", make_unique<Link>(mode_, "/tmp/bcc-fd-" + std::to_string(fd_)));
 }
 
 }  // namespace bcc

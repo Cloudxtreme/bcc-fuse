@@ -19,6 +19,6 @@
 #include <stdio.h>
 
 int main(int argc, char **argv) {
-  printf("fd = %d\n", bcc_recv_fd("/var/run/bcc-fd"));
+  printf("fd = %d\n", bcc_recv_fd("/tmp/bcc/bcc-fd"));
   return 0;
 }
