@@ -14,3 +14,5 @@ echo -e 'BPF_TABLE("array", int, int, bar, 10);\nint hello(void *ctx) { return 0
 
 sudo mkdir -p $D/fuz
 echo -e 'BPF_TABLE("array", int, int, baz, 10);\nint hello(void *ctx) { return 0; }' | sudo tee $D/fuz/source
+echo "filter" | sudo tee $D/fuz/functions/hello/type
+

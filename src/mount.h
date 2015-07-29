@@ -174,8 +174,9 @@ class RootDir : public Dir {
 class ProgramDir : public Dir {
  public:
   ProgramDir(Mount *mount, mode_t mode);
+  ~ProgramDir();
   int load_program(const char *text);
-  int unload_program();
+  void unload_program();
  private:
   void *bpf_module_;
 };
@@ -189,9 +190,11 @@ class MapDir : public Dir {
 
 class FunctionDir : public Dir {
  public:
-  FunctionDir(Mount *mount, mode_t mode, const std::map<std::string, int> &function_fds);
+  FunctionDir(Mount *mount, mode_t mode, void *bpf_module);
+  // load function and return open fd
+  int load_function(size_t id, const std::string &type);
  private:
-  std::map<std::string, int> function_fds_;
+  void *bpf_module_;
 };
 
 class File : public Inode {
@@ -212,17 +215,24 @@ class File : public Inode {
   size_t size_;
 };
 
-class SourceFile : public File {
+class StringFile : public File {
  public:
-  SourceFile(Mount *mount, ProgramDir *parent) : File(mount), parent_(parent) {}
+  StringFile(Mount *mount) : File(mount) {}
   int read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) override;
   int write(const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) override;
+  int truncate(off_t newsize) = 0;
+  int flush(struct fuse_file_info *fi) = 0;
+ protected:
+  size_t size() const { return data_.size(); }
+  std::string data_;
+};
+
+class SourceFile : public StringFile {
+ public:
+  SourceFile(Mount *mount, ProgramDir *parent) : StringFile(mount), parent_(parent) {}
   int truncate(off_t newsize) override;
   int flush(struct fuse_file_info *fi) override;
  protected:
-  size_t size() const { return data_.size(); }
- private:
-  std::string data_;
   ProgramDir *parent_;
 };
 
@@ -246,6 +256,15 @@ class FunctionFile : public File {
   size_t size() const override { return std::to_string(fd_).size() + 1; }
  private:
   int fd_;
+};
+
+class FunctionTypeFile : public StringFile {
+ public:
+  FunctionTypeFile(Mount *mount, FunctionDir *parent) : StringFile(mount), parent_(parent) {}
+  int truncate(off_t newsize) override;
+  int flush(struct fuse_file_info *fi) override;
+ protected:
+  FunctionDir *parent_;
 };
 
 }  // namespace bcc

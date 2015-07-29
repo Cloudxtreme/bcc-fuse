@@ -53,7 +53,7 @@ int File::read_helper(const string &data, char *buf, size_t size,
   return size;
 }
 
-int SourceFile::read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+int StringFile::read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
   if (offset < (off_t)data_.size()) {
     if (offset + size > data_.size())
       size = data_.size() - offset;
@@ -62,11 +62,17 @@ int SourceFile::read(char *buf, size_t size, off_t offset, struct fuse_file_info
   return size;
 }
 
-int SourceFile::write(const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+int StringFile::write(const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
   if (offset > (off_t)data_.size())
     offset = data_.size();
   data_.replace(offset, size, buf, size);
   return size;
+}
+
+int SourceFile::truncate(off_t newsize) {
+  parent_->unload_program();
+  data_.resize(newsize);
+  return 0;
 }
 
 int SourceFile::flush(struct fuse_file_info *fi) {
@@ -78,18 +84,21 @@ int SourceFile::flush(struct fuse_file_info *fi) {
   return 0;
 }
 
-int SourceFile::truncate(off_t newsize) {
-  parent_->unload_program();
-  data_.resize(newsize);
-  return 0;
-}
-
 int StatFile::read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
   return read_helper(data_, buf, size, offset, fi);
 }
 
 int FunctionFile::read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
   return read_helper((std::to_string(fd_) + "\n").c_str(), buf, size, offset, fi);
+}
+
+int FunctionTypeFile::truncate(off_t newsize) {
+  data_.resize(newsize);
+  return 0;
+}
+
+int FunctionTypeFile::flush(struct fuse_file_info *fi) {
+  return 0;
 }
 
 }  // namespace bcc

@@ -22,6 +22,7 @@
 #include "string_util.h"
 
 using std::map;
+using std::move;
 using std::string;
 using std::unique_ptr;
 
@@ -57,29 +58,41 @@ int Dir::readdir(void *buf, fuse_fill_dir_t filler, off_t offset,
 }
 
 void Dir::add_child(const string &name, unique_ptr<Inode> node) {
-  children_[name] = std::move(node);
+  remove_child(name);
+  if (node->type() == file_e)
+    ++n_files_;
+  else
+    ++n_dirs_;
+  children_[name] = move(node);
 }
 
 void Dir::remove_child(const string &name) {
-  children_.erase(name);
+  auto it = children_.find(name);
+  if (it != children_.end()) {
+    if (it->second->type() == file_e)
+      --n_files_;
+    else
+      --n_dirs_;
+    children_.erase(it);
+  }
 }
 
 int RootDir::mkdir(const char *path, mode_t mode) {
   auto it = children_.find(path);
   if (it != children_.end())
     return -EEXIST;
-  children_[path] = make_unique<ProgramDir>(mount(), mode);
-  ++n_dirs_;
+  add_child(path, make_unique<ProgramDir>(mount(), mode));
   return 0;
 }
 
 ProgramDir::ProgramDir(Mount *mount, mode_t mode)
     : Dir(mount, mode), bpf_module_(nullptr) {
-  children_["maps"] = make_unique<Dir>(mount, mode);
-  n_dirs_ = 1;
-  children_["source"] = make_unique<SourceFile>(mount, this);
-  children_["valid"] = make_unique<StatFile>(mount, "0\n");
-  n_files_ = 2;
+  add_child("source", make_unique<SourceFile>(mount, this));
+  add_child("valid", make_unique<StatFile>(mount, "0\n"));
+}
+
+ProgramDir::~ProgramDir() {
+  unload_program();
 }
 
 int ProgramDir::load_program(const char *text) {
@@ -92,50 +105,44 @@ int ProgramDir::load_program(const char *text) {
   }
   bpf_module_ = m;
   validf->set_data("1\n");
-  map<string, int> function_fds;
+
+  auto functions = make_unique<Dir>(mount(), mode_);
   size_t num_functions = bpf_num_functions(bpf_module_);
   for (size_t i = 0; i < num_functions; ++i) {
-    function_fds[bpf_function_name(bpf_module_, i)] = -1;
+    functions->add_child(bpf_function_name(bpf_module_, i),
+                         make_unique<FunctionDir>(mount(), mode_, bpf_module_));
   }
-  children_["functions"] = make_unique<FunctionDir>(mount(), mode_, function_fds);
-  ++n_dirs_;
+  add_child("functions", move(functions));
 
-  Dir *mapd = dynamic_cast<Dir *>(&*children_["maps"]);
+  auto maps = make_unique<Dir>(mount(), mode_);
   size_t num_tables = bpf_num_tables(bpf_module_);
   for (size_t i = 0; i < num_tables; ++i) {
-    mapd->add_child(bpf_table_name(bpf_module_, i),
+    maps->add_child(bpf_table_name(bpf_module_, i),
                     make_unique<MapDir>(mount(), mode_, bpf_table_fd_id(bpf_module_, i)));
   }
+  add_child("maps", move(maps));
   return 0;
 }
 
-int ProgramDir::unload_program() {
-  StatFile *validf = dynamic_cast<StatFile *>(&*children_["valid"]);
-  if (!validf) return 1;
+void ProgramDir::unload_program() {
+  if (StatFile *validf = dynamic_cast<StatFile *>(&*children_["valid"]))
+    validf->set_data("0\n");
   if (bpf_module_)
     bpf_module_destroy(bpf_module_);
-  validf->set_data("0\n");
-  children_.erase("functions");
-  --n_dirs_;
+  remove_child("functions");
+  remove_child("maps");
   bpf_module_ = nullptr;
-  return 0;
 }
 
-FunctionDir::FunctionDir(Mount *mount, mode_t mode, const map<string, int> &function_fds)
-    : Dir(mount, mode), function_fds_(function_fds) {
-
-  for (auto function : function_fds_) {
-    children_[function.first] = make_unique<FunctionFile>(mount, function.second);
-    ++n_files_;
-  }
+FunctionDir::FunctionDir(Mount *mount, mode_t mode, void *bpf_module)
+    : Dir(mount, mode), bpf_module_(bpf_module) {
+  add_child("type", make_unique<FunctionTypeFile>(mount, this));
 }
 
 MapDir::MapDir(Mount *mount, mode_t mode, int fd)
     : Dir(mount, mode), fd_(fd) {
-  children_["fd"] = make_unique<StatFile>(mount, std::to_string(fd_) + "\n");
-  n_files_ = 1;
-  children_["link"] = make_unique<Link>(mount, mode_, "/tmp/bcc-fd-" + std::to_string(fd_));
-  ++n_dirs_;
+  add_child("fd", make_unique<StatFile>(mount, std::to_string(fd_) + "\n"));
+  add_child("link", make_unique<Link>(mount, mode_, "/tmp/bcc-fd-" + std::to_string(fd_)));
 }
 
 }  // namespace bcc
