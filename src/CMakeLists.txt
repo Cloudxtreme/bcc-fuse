@@ -3,8 +3,10 @@
 
 set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--exclude-libs=ALL")
 
-add_executable(bcc-fuser main.cc mount.cc dir.cc file.cc link.cc)
-target_link_libraries(bcc-fuser ${FUSE_LIBRARIES} ${LIBBPF})
+add_library(bccclient SHARED client.c)
+
+add_executable(bcc-fuser main.cc mount.cc dir.cc file.cc link.cc socket.cc)
+target_link_libraries(bcc-fuser ${FUSE_LIBRARIES} ${LIBBPF} bccclient pthread)
 
 # if gcc 4.9 or higher is used, static libstdc++ is a good option
 if (CMAKE_COMPILER_IS_GNUCC)
@@ -14,6 +16,5 @@ if (CMAKE_COMPILER_IS_GNUCC)
   endif()
 endif()
 
-add_library(bccclient SHARED client.c)
-
+install(TARGETS bccclient LIBRARY DESTINATION lib${LIBSUFFIX})
 install(FILES client.h DESTINATION include/bcc)

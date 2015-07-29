@@ -22,16 +22,16 @@
 
 #include "client.h"
 
-int bcc_recv_fd(const char *path) {
+int bcc_send_fd(const char *path, int fd) {
   ssize_t size;
-  int fd = -1, sock = -1;
+  int cl = -1, sock = -1;
   union {
     struct cmsghdr cmsghdr;
     char control[CMSG_SPACE(sizeof(int))];
   } cmsgu;
   struct cmsghdr *cmsg;
 
-  char buf[8];
+  char buf[4] = {0};
   struct iovec iov = { .iov_base = buf, .iov_len = sizeof(buf) };
 
   struct msghdr msg = {
@@ -43,7 +43,78 @@ int bcc_recv_fd(const char *path) {
     .msg_namelen = 0,
   };
 
-  sock = socket(AF_UNIX, SOCK_DGRAM, 0);
+  sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0) {
+    perror("socket");
+    goto cleanup;
+  }
+  struct sockaddr_un addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, path, sizeof(addr.sun_path));
+
+  unlink(addr.sun_path);
+  if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    perror("bind");
+    goto cleanup;
+  }
+
+  if (listen(sock, 1) < 0) {
+    perror("listen");
+    goto cleanup;
+  }
+
+  cl = accept(sock, NULL, NULL);
+  if (cl < 0) {
+    perror("accept");
+    goto cleanup;
+  }
+
+  cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_len = CMSG_LEN(sizeof(fd));
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  *((int *)CMSG_DATA(cmsg)) = fd;
+
+  size = sendmsg(cl, &msg, 0);
+  if (size < 0) {
+    perror("sendmsg");
+    goto cleanup;
+  }
+
+cleanup:
+  if (sock >= 0)
+    close(sock);
+  if (cl >= 0)
+    close(cl);
+  return 0;
+}
+
+int bcc_recv_fd(const char *path) {
+  ssize_t size;
+  int fd = -1, sock = -1;
+  union {
+    struct cmsghdr cmsghdr;
+    char control[CMSG_SPACE(sizeof(int))];
+  } cmsgu;
+  struct cmsghdr *cmsg;
+
+  char buf[4];
+  struct iovec iov = { .iov_base = buf, .iov_len = sizeof(buf) };
+
+  struct msghdr msg = {
+    .msg_iov = &iov,
+    .msg_iovlen = 1,
+    .msg_control = cmsgu.control,
+    .msg_controllen = sizeof(cmsgu.control),
+    .msg_name = NULL,
+    .msg_namelen = 0,
+  };
+  cmsgu.cmsghdr.cmsg_len = CMSG_LEN(sizeof(fd));
+  cmsgu.cmsghdr.cmsg_level = SOL_SOCKET;
+  cmsgu.cmsghdr.cmsg_type = SCM_RIGHTS;
+
+  sock = socket(AF_UNIX, SOCK_STREAM, 0);
   if (sock < 0) {
     perror("socket");
     goto cleanup;
@@ -64,7 +135,7 @@ int bcc_recv_fd(const char *path) {
     goto cleanup;
   }
   cmsg = CMSG_FIRSTHDR(&msg);
-  if (!cmsg || cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
+  if (!cmsg || cmsg->cmsg_len != CMSG_LEN(sizeof(fd))) {
     fprintf(stderr, "recvmsg: invalid control response\n");
     goto cleanup;
   }

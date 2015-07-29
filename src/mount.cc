@@ -76,7 +76,7 @@ int Mount::readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t of
   log("readdir: %s\n", path);
   Path p(path);
   Inode *leaf = root_->leaf(&p);
-  if (!leaf)
+  if (!leaf || p.next())
     return -ENOENT;
   if (leaf->type() == Inode::dir_e)
     return static_cast<Dir *>(leaf)->readdir(buf, filler, offset, fi);
@@ -99,11 +99,36 @@ int Mount::mkdir(const char *path, mode_t mode) {
   return -ENOTDIR;
 }
 
+int Mount::mknod(const char *path, mode_t mode, dev_t rdev) {
+  log("mknod: %s\n", path);
+  Path p(path);
+  Inode *leaf = root_->leaf(&p);
+  if (!leaf)
+    return -ENOENT;
+  p.consume();
+  if (!p.cur())
+    return -EEXIST;
+  if (p.next())
+    return -ENOENT;
+  if (leaf->type() == Inode::dir_e)
+    return static_cast<Dir *>(leaf)->mknod(p.cur(), mode, rdev);
+  return -ENOTDIR;
+}
+
+int Mount::unlink(const char *path) {
+  log("unlink: %s\n", path);
+  Path p(path);
+  Inode *leaf = root_->leaf(&p);
+  if (!leaf || p.next())
+    return -ENOENT;
+  return -EINVAL;
+}
+
 int Mount::open(const char *path, struct fuse_file_info *fi) {
   log("open: %s\n", path);
   Path p(path);
   Inode *leaf = root_->leaf(&p);
-  if (!leaf)
+  if (!leaf || p.next())
     return -ENOENT;
   if (leaf->type() == Inode::dir_e)
     return -EISDIR;
@@ -113,8 +138,7 @@ int Mount::open(const char *path, struct fuse_file_info *fi) {
 int Mount::read(const char *path, char *buf, size_t size, off_t offset,
                 struct fuse_file_info *fi) {
   log("read: %s sz=%zu off=%zu\n", path, size, offset);
-  Path p(path);
-  Inode *leaf = fi->fh ? (Inode *)fi->fh : root_->leaf(&p);
+  Inode *leaf = (Inode *)fi->fh;
   if (!leaf)
     return -ENOENT;
   if (leaf->type() == Inode::file_e)
@@ -125,8 +149,7 @@ int Mount::read(const char *path, char *buf, size_t size, off_t offset,
 int Mount::write(const char *path, const char *buf, size_t size, off_t offset,
                  struct fuse_file_info *fi) {
   log("write: %s sz=%zu off=%zu\n", path, size, offset);
-  Path p(path);
-  Inode *leaf = fi->fh ? (Inode *)fi->fh : root_->leaf(&p);
+  Inode *leaf = (Inode *)fi->fh;
   if (!leaf)
     return -ENOENT;
   if (leaf->type() == Inode::file_e)
@@ -138,7 +161,7 @@ int Mount::truncate(const char *path, off_t newsize) {
   log("truncate: %s sz=%zd\n", path, newsize);
   Path p(path);
   Inode *leaf = root_->leaf(&p);
-  if (!leaf)
+  if (!leaf || p.next())
     return -ENOENT;
   if (leaf->type() == Inode::file_e)
     return static_cast<File *>(leaf)->truncate(newsize);
@@ -147,8 +170,7 @@ int Mount::truncate(const char *path, off_t newsize) {
 
 int Mount::flush(const char *path, struct fuse_file_info *fi) {
   log("flush: %s\n", path);
-  Path p(path);
-  Inode *leaf = fi->fh ? (Inode *)fi->fh : root_->leaf(&p);
+  Inode *leaf = (Inode *)fi->fh;
   if (!leaf)
     return -ENOENT;
   if (leaf->type() == Inode::file_e)
@@ -160,7 +182,7 @@ int Mount::readlink(const char *path, char *buf, size_t size) {
   log("readlink: %s\n", path);
   Path p(path);
   Inode *leaf = root_->leaf(&p);
-  if (!leaf)
+  if (!leaf || p.next())
     return -ENOENT;
   if (leaf->type() == Inode::link_e)
     return static_cast<Link *>(leaf)->readlink(buf, size);

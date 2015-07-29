@@ -14,32 +14,20 @@
  * limitations under the License.
  */
 
-#include <fuse.h>
-#include <string>
-#include <bcc/bpf_common.h>
+#include <unistd.h>
 
 #include "mount.h"
 #include "string_util.h"
 
-using std::map;
-using std::string;
-using std::unique_ptr;
-
 namespace bcc {
 
-Link::Link(Mount *mount, mode_t mode, const string &dst)
-    : Inode(mount, link_e), dst_(dst) {
+Socket::Socket(Mount *mount, mode_t mode, dev_t rdev)
+  : Inode(mount, socket_e), rdev_(rdev) {
 }
 
-int Link::getattr(struct stat *st) {
-  st->st_mode = S_IFLNK | 0777;
+int Socket::getattr(struct stat *st) {
+  st->st_mode = S_IFSOCK | 0777;
   st->st_nlink = 1;
-  st->st_size = dst_.size();
-  return 0;
-}
-
-int Link::readlink(char *buf, size_t size) {
-  strncpy(buf, dst_.c_str(), size);
   return 0;
 }
 

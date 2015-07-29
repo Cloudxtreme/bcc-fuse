@@ -15,20 +15,21 @@
  */
 
 #include <fuse.h>
+#include <future>
 #include <string>
+#include <unistd.h>
 
+#include "client.h"
 #include "mount.h"
 #include "string_util.h"
 
+using std::async;
 using std::string;
+using std::thread;
 
 namespace bcc {
 
 File::File(Mount *mount) : Inode(mount, file_e) {
-}
-
-Inode * File::leaf(Path *path) {
-  return this;
 }
 
 int File::getattr(struct stat *st) {
@@ -70,7 +71,7 @@ int StringFile::write(const char *buf, size_t size, off_t offset, struct fuse_fi
 }
 
 int SourceFile::truncate(off_t newsize) {
-  parent_->unload_program();
+  parent_->unload();
   data_.resize(newsize);
   return 0;
 }
@@ -78,8 +79,8 @@ int SourceFile::truncate(off_t newsize) {
 int SourceFile::flush(struct fuse_file_info *fi) {
   if (data_.empty() || data_ == "\n")
     return 0;
-  parent_->unload_program();
-  if (parent_->load_program(data_.c_str()))
+  parent_->unload();
+  if (parent_->load(data_.c_str()))
     return -EIO;
   return 0;
 }
@@ -88,16 +89,35 @@ int StatFile::read(char *buf, size_t size, off_t offset, struct fuse_file_info *
   return read_helper(data_, buf, size, offset, fi);
 }
 
+FunctionFile::FunctionFile(Mount *mount, int fd)
+    : File(mount), fd_(fd) {
+  auto fn = [&] () {
+    bcc_send_fd("/var/run/bcc-fd", fd_);
+  };
+  thread_ = thread(fn);
+}
+
+FunctionFile::~FunctionFile() {
+  close(fd_);
+  thread_.join();
+}
+
 int FunctionFile::read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
   return read_helper((std::to_string(fd_) + "\n").c_str(), buf, size, offset, fi);
 }
 
 int FunctionTypeFile::truncate(off_t newsize) {
+  parent_->unload();
   data_.resize(newsize);
   return 0;
 }
 
 int FunctionTypeFile::flush(struct fuse_file_info *fi) {
+  if (data_.empty() || data_ == "\n")
+    return 0;
+  parent_->unload();
+  if (parent_->load(data_))
+    return -EIO;
   return 0;
 }
 

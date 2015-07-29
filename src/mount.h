@@ -21,6 +21,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <thread>
 #include <vector>
 
 // forward declarations from fuse.h
@@ -55,6 +56,12 @@ class Mount {
   static int mkdir_(const char *path, mode_t mode) {
     return instance()->mkdir(path, mode);
   }
+  static int mknod_(const char *path, mode_t mode, dev_t rdev) {
+    return instance()->mknod(path, mode, rdev);
+  }
+  static int unlink_(const char *path) {
+    return instance()->unlink(path);
+  }
   static int open_(const char *path, struct fuse_file_info *fi) {
     return instance()->open(path, fi);
   }
@@ -81,6 +88,8 @@ class Mount {
   int readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset,
               struct fuse_file_info *fi);
   int mkdir(const char *path, mode_t mode);
+  int mknod(const char *path, mode_t mode, dev_t rdev);
+  int unlink(const char *path);
   int open(const char *path, struct fuse_file_info *fi);
   int read(const char *path, char *buf, size_t size, off_t offset,
            struct fuse_file_info *fi);
@@ -117,16 +126,17 @@ class Mount {
 class Inode {
  public:
   enum InodeType {
-    dir_e, file_e, link_e,
+    dir_e, file_e, link_e, socket_e,
   };
   explicit Inode(Mount *mount, InodeType type) : mount_(mount), type_(type) {}
+  virtual ~Inode() {}
   Inode(const Inode &) = delete;
   Mount * mount() const { return mount_; }
   void set_mount(Mount *mount) { mount_ = mount; }
   InodeType type() const { return type_; }
   void set_type(InodeType type) { type_ = type; }
 
-  virtual Inode * leaf(Path *path) = 0;
+  virtual Inode * leaf(Path *path) { return this; }
 
   virtual int getattr(struct stat *st) = 0;
 
@@ -143,21 +153,29 @@ class Link : public Inode {
  public:
   Link(Mount *mount, mode_t mode, const std::string &dst);
   int getattr(struct stat *st) override;
-  Inode * leaf(Path *path) override;
   virtual int readlink(char *buf, size_t size);
  protected:
   std::string dst_;
 };
 
+class Socket : public Inode {
+ public:
+  Socket(Mount *mount, mode_t mode, dev_t rdev);
+  int getattr(struct stat *st) override;
+ protected:
+  dev_t rdev_;
+};
+
 class Dir : public Inode {
  public:
   Dir(Mount *mount, mode_t mode);
-  Inode * leaf(Path *path);
+  Inode * leaf(Path *path) override;
   void add_child(const std::string &name, std::unique_ptr<Inode> node);
   void remove_child(const std::string &name);
   int getattr(struct stat *st) override;
   int readdir(void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi);
   virtual int mkdir(const char *name, mode_t mode) { return -EACCES; }
+  virtual int mknod(const char *name, mode_t mode, dev_t rdev);
  protected:
   std::map<std::string, std::unique_ptr<Inode>> children_;
   size_t n_files_;
@@ -175,8 +193,8 @@ class ProgramDir : public Dir {
  public:
   ProgramDir(Mount *mount, mode_t mode);
   ~ProgramDir();
-  int load_program(const char *text);
-  void unload_program();
+  int load(const char *text);
+  void unload();
  private:
   void *bpf_module_;
 };
@@ -190,17 +208,18 @@ class MapDir : public Dir {
 
 class FunctionDir : public Dir {
  public:
-  FunctionDir(Mount *mount, mode_t mode, void *bpf_module);
+  FunctionDir(Mount *mount, mode_t mode, void *bpf_module, int id);
   // load function and return open fd
-  int load_function(size_t id, const std::string &type);
+  int load(const std::string &type);
+  void unload();
  private:
   void *bpf_module_;
+  int id_;
 };
 
 class File : public Inode {
  public:
   File(Mount *mount);
-  Inode * leaf(Path *path);
   int getattr(struct stat *st) override;
   int open(struct fuse_file_info *fi);
   virtual int read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) { return -EACCES; }
@@ -250,12 +269,14 @@ class StatFile : public File {
 
 class FunctionFile : public File {
  public:
-  FunctionFile(Mount *mount, int fd) : File(mount), fd_(fd) {}
+  FunctionFile(Mount *mount, int fd);
+  ~FunctionFile();
   int read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) override;
  protected:
   size_t size() const override { return std::to_string(fd_).size() + 1; }
  private:
   int fd_;
+  std::thread thread_;
 };
 
 class FunctionTypeFile : public StringFile {

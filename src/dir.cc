@@ -17,6 +17,8 @@
 #include <fuse.h>
 #include <string>
 #include <bcc/bpf_common.h>
+#include <bcc/libbpf.h>
+#include <unistd.h>
 
 #include "mount.h"
 #include "string_util.h"
@@ -57,6 +59,14 @@ int Dir::readdir(void *buf, fuse_fill_dir_t filler, off_t offset,
   return 0;
 }
 
+int Dir::mknod(const char *name, mode_t mode, dev_t rdev) {
+  if (S_ISSOCK(mode))
+    add_child(name, make_unique<Socket>(mount(), mode, rdev));
+  else
+    return -EPERM;
+  return 0;
+}
+
 void Dir::add_child(const string &name, unique_ptr<Inode> node) {
   remove_child(name);
   if (node->type() == file_e)
@@ -92,10 +102,10 @@ ProgramDir::ProgramDir(Mount *mount, mode_t mode)
 }
 
 ProgramDir::~ProgramDir() {
-  unload_program();
+  unload();
 }
 
-int ProgramDir::load_program(const char *text) {
+int ProgramDir::load(const char *text) {
   StatFile *validf = dynamic_cast<StatFile *>(&*children_["valid"]);
   if (!validf) return 1;
   void *m = bpf_module_create_from_string(text, mount_->flags());
@@ -110,7 +120,7 @@ int ProgramDir::load_program(const char *text) {
   size_t num_functions = bpf_num_functions(bpf_module_);
   for (size_t i = 0; i < num_functions; ++i) {
     functions->add_child(bpf_function_name(bpf_module_, i),
-                         make_unique<FunctionDir>(mount(), mode_, bpf_module_));
+                         make_unique<FunctionDir>(mount(), mode_, bpf_module_, i));
   }
   add_child("functions", move(functions));
 
@@ -124,7 +134,7 @@ int ProgramDir::load_program(const char *text) {
   return 0;
 }
 
-void ProgramDir::unload_program() {
+void ProgramDir::unload() {
   if (StatFile *validf = dynamic_cast<StatFile *>(&*children_["valid"]))
     validf->set_data("0\n");
   if (bpf_module_)
@@ -134,9 +144,37 @@ void ProgramDir::unload_program() {
   bpf_module_ = nullptr;
 }
 
-FunctionDir::FunctionDir(Mount *mount, mode_t mode, void *bpf_module)
-    : Dir(mount, mode), bpf_module_(bpf_module) {
+FunctionDir::FunctionDir(Mount *mount, mode_t mode, void *bpf_module, int id)
+    : Dir(mount, mode), bpf_module_(bpf_module), id_(id) {
   add_child("type", make_unique<FunctionTypeFile>(mount, this));
+}
+
+int FunctionDir::load(const string &type) {
+  bpf_prog_type prog_type = BPF_PROG_TYPE_UNSPEC;
+  if (type == "filter")
+    prog_type = BPF_PROG_TYPE_SOCKET_FILTER;
+  else if (type == "kprobe")
+    prog_type = BPF_PROG_TYPE_KPROBE;
+  else if (type == "sched_cls")
+    prog_type = BPF_PROG_TYPE_SCHED_CLS;
+  else if (type == "sched_act")
+    prog_type = BPF_PROG_TYPE_SCHED_ACT;
+  else
+    return -1;
+  char log_buf[64 * 1024];
+  int fd = bpf_prog_load(prog_type, (const bpf_insn *)bpf_function_start_id(bpf_module_, id_),
+                         bpf_function_size_id(bpf_module_, id_), bpf_module_license(bpf_module_),
+                         bpf_module_kern_version(bpf_module_), log_buf, sizeof(log_buf));
+  if (fd < 0) {
+    add_child("error", make_unique<StatFile>(mount(), log_buf));
+    return -1;
+  }
+  add_child("fd", make_unique<FunctionFile>(mount(), fd));
+  return 0;
+}
+
+void FunctionDir::unload() {
+  remove_child("fd");
 }
 
 MapDir::MapDir(Mount *mount, mode_t mode, int fd)
