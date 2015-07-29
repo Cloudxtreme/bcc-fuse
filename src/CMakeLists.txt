@@ -4,8 +4,9 @@
 set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--exclude-libs=ALL")
 
 add_library(bccclient SHARED client.c)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-add_executable(bcc-fuser main.cc mount.cc dir.cc file.cc link.cc socket.cc)
+add_executable(bcc-fuser main.cc fs/mount.cc fs/dir.cc fs/file.cc fs/link.cc fs/socket.cc)
 target_link_libraries(bcc-fuser ${FUSE_LIBRARIES} ${LIBBPF} bccclient pthread)
 
 # if gcc 4.9 or higher is used, static libstdc++ is a good option

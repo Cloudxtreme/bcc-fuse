@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "mount.h"
+#include "fs/mount.h"
 
 int main(int argc, char **argv) {
   bcc::Mount obj;
