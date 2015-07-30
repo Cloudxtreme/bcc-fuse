@@ -90,8 +90,6 @@ int Mount::mkdir(const char *path, mode_t mode) {
   log("mkdir: %s\n", path);
   Path p(path);
   Inode *leaf = root_->leaf(&p);
-  if (!leaf)
-    return -ENOENT;
   p.consume();
   if (!p.cur())
     return -EEXIST;
@@ -103,11 +101,12 @@ int Mount::mkdir(const char *path, mode_t mode) {
 }
 
 int Mount::mknod(const char *path, mode_t mode, dev_t rdev) {
-  log("mknod: %s\n", path);
+  log("mknod: %s %#x %#x\n", path, mode, rdev);
   Path p(path);
   Inode *leaf = root_->leaf(&p);
-  if (!leaf)
-    return -ENOENT;
+  // special case hack for binding on top of myself
+  if (FunctionSocket *fn_sock = dynamic_cast<FunctionSocket *>(leaf))
+    return fn_sock->mknod();
   p.consume();
   if (!p.cur())
     return -EEXIST;

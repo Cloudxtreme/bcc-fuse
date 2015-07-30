@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <algorithm>
 #include <fuse.h>
 #include <string>
 #include <bcc/bpf_common.h>
@@ -86,6 +87,14 @@ void Dir::remove_child(const string &name) {
     it->second->set_parent(nullptr);
     children_.erase(it);
   }
+}
+
+string Dir::path(const Inode *node) const {
+  for (auto&& it : children_) {
+    if (&*it.second == node)
+      return Inode::path() + "/" + it.first;
+  }
+  return "?";
 }
 
 int RootDir::mkdir(const char *path, mode_t mode) {
@@ -170,7 +179,7 @@ int FunctionDir::load(const string &type) {
     add_child("error", make_unique<StatFile>(log_buf));
     return -1;
   }
-  add_child("fd", make_unique<FunctionFile>(fd));
+  add_child("fd", make_unique<FunctionSocket>(mode_, 0, fd));
   return 0;
 }
 

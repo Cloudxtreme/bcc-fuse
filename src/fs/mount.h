@@ -140,6 +140,7 @@ class Inode {
   InodeType type() const { return type_; }
   void set_type(InodeType type) { type_ = type; }
   void set_parent(Dir *parent) { parent_ = parent; }
+  std::string path() const;
 
   virtual Inode * leaf(Path *path) { return this; }
 
@@ -167,6 +168,18 @@ class Socket : public Inode {
   dev_t rdev_;
 };
 
+class FunctionSocket : public Socket {
+ public:
+  FunctionSocket(mode_t mode, dev_t rdev, int fd);
+  ~FunctionSocket();
+  int getattr(struct stat *st) override;
+  int mknod();
+ private:
+  int fd_;
+  std::thread thread_;
+  bool ready_;
+};
+
 class Dir : public Inode {
  public:
   Dir(mode_t mode);
@@ -177,6 +190,7 @@ class Dir : public Inode {
   int readdir(void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi);
   virtual int mkdir(const char *name, mode_t mode) { return -EACCES; }
   virtual int mknod(const char *name, mode_t mode, dev_t rdev);
+  std::string path(const Inode *node) const;
  protected:
   std::map<std::string, std::unique_ptr<Inode>> children_;
   size_t n_files_;
@@ -264,18 +278,6 @@ class StatFile : public File {
   size_t size() const override { return data_.size(); }
  private:
   std::string data_;
-};
-
-class FunctionFile : public File {
- public:
-  FunctionFile(int fd);
-  ~FunctionFile();
-  int read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) override;
- protected:
-  size_t size() const override { return std::to_string(fd_).size() + 1; }
- private:
-  int fd_;
-  std::thread thread_;
 };
 
 class FunctionTypeFile : public StringFile {

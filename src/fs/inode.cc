@@ -14,11 +14,17 @@
  * limitations under the License.
  */
 
-#include <bcc/client.h>
-#include <bcc/libbpf.h>
-#include <stdio.h>
+#include <string>
+#include "mount.h"
 
-int main(int argc, char **argv) {
-  printf("fd = %d\n", bcc_recv_fd(argv[argc - 1]));
-  return 0;
+using std::string;
+
+namespace bcc {
+
+string Inode::path() const {
+  if (parent_)
+    return parent_->path(this);
+  return ".";
 }
+
+}  // namespace bcc
