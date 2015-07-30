@@ -33,6 +33,7 @@ Mount::Mount() : flags_(0) {
   log_ = fopen("/tmp/bcc-fuse.log", "w");
   oper_.reset(new fuse_operations);
   root_.reset(new RootDir(0755));
+  root_->set_mount(this);
   memset(&*oper_, 0, sizeof(*oper_));
   oper_->getattr = getattr_;
   oper_->readdir = readdir_;
@@ -55,14 +56,6 @@ Mount::~Mount() {
 Mount * Mount::instance() {
   return static_cast<Mount *>(fuse_get_context()->private_data);
 }
-
-vector<string> Mount::props_ = {
-  "source",
-  "valid",
-};
-vector<string> Mount::subdirs_ = {
-  "maps",
-};
 
 int Mount::getattr(const char *path, struct stat *st) {
   log("getattr: %s\n", path);
@@ -105,8 +98,8 @@ int Mount::mknod(const char *path, mode_t mode, dev_t rdev) {
   Path p(path);
   Inode *leaf = root_->leaf(&p);
   // special case hack for binding on top of myself
-  if (FunctionSocket *fn_sock = dynamic_cast<FunctionSocket *>(leaf))
-    return fn_sock->mknod();
+  if (FDSocket *fd_sock = dynamic_cast<FDSocket *>(leaf))
+    return fd_sock->mknod();
   p.consume();
   if (!p.cur())
     return -EEXIST;
@@ -199,6 +192,7 @@ int Mount::ioctl(const char *path, int cmd, void *arg, struct fuse_file_info *fi
 }
 
 int Mount::run(int argc, char **argv) {
+  mountpath_.assign(argv[argc - 1]);
   return fuse_main(argc, argv, &*oper_, this);
 }
 

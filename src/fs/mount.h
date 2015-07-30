@@ -42,8 +42,6 @@ typedef int (*fuse_fill_dir_t) (void *buf, const char *name,
         const struct stat *stbuf, off_t off);
 class Mount {
  private:
-  // fetch this from fuse private_data
-  static Mount * instance();
 
   // wrapper functions, to be registered with fuse
   static int getattr_(const char *path, struct stat *st) {
@@ -110,7 +108,12 @@ class Mount {
   ~Mount();
   int run(int argc, char **argv);
 
+  // fetch this from fuse private_data
+  static Mount * instance();
+
   unsigned flags() const { return flags_; }
+
+  const std::string & mountpath() const { return mountpath_; }
 
   template <typename... Args>
   void log(const char *fmt, Args&&... args) {
@@ -126,6 +129,7 @@ class Mount {
   FILE *log_;
   std::unique_ptr<Dir> root_;
   unsigned flags_;
+  std::string mountpath_;
 };
 
 // Inode base class
@@ -134,19 +138,26 @@ class Inode {
   enum InodeType {
     dir_e, file_e, link_e, socket_e,
   };
-  Inode(InodeType type) : parent_(nullptr), type_(type) {}
+  explicit Inode(InodeType type);
   virtual ~Inode() {}
   Inode(const Inode &) = delete;
   InodeType type() const { return type_; }
   void set_type(InodeType type) { type_ = type; }
   void set_parent(Dir *parent) { parent_ = parent; }
+  void set_mount(Mount *mount) { mount_ = mount; }
   std::string path() const;
 
   virtual Inode * leaf(Path *path) { return this; }
 
   virtual int getattr(struct stat *st) = 0;
 
+  template <typename... Args>
+  void log(const char *fmt, Args&&... args) {
+    mount_->log(fmt, std::forward<Args>(args)...);
+  }
+
  protected:
+  Mount *mount_;
   Dir *parent_;
   InodeType type_;
 };
@@ -168,10 +179,10 @@ class Socket : public Inode {
   dev_t rdev_;
 };
 
-class FunctionSocket : public Socket {
+class FDSocket : public Socket {
  public:
-  FunctionSocket(mode_t mode, dev_t rdev, int fd);
-  ~FunctionSocket();
+  FDSocket(mode_t mode, dev_t rdev, int fd);
+  ~FDSocket();
   int getattr(struct stat *st) override;
   int mknod();
  private:

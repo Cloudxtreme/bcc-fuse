@@ -39,7 +39,7 @@ int Socket::getattr(struct stat *st) {
   return 0;
 }
 
-FunctionSocket::~FunctionSocket() {
+FDSocket::~FDSocket() {
   close(fd_);
   if (sock_ >= 0) {
     shutdown(sock_, SHUT_RDWR);
@@ -48,7 +48,7 @@ FunctionSocket::~FunctionSocket() {
   thread_.join();
 }
 
-FunctionSocket::FunctionSocket(mode_t mode, dev_t rdev, int fd)
+FDSocket::FDSocket(mode_t mode, dev_t rdev, int fd)
     : Socket(mode, rdev), fd_(fd), sock_(-1), ready_(false) {
   auto fn = [&] () {
 
@@ -58,11 +58,10 @@ FunctionSocket::FunctionSocket(mode_t mode, dev_t rdev, int fd)
       return;
     }
 
-    string p = "/tmp/bcc/" + path();
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, p.c_str(), sizeof(addr.sun_path));
+    strncpy(addr.sun_path, path().c_str(), sizeof(addr.sun_path));
 
     unlink(addr.sun_path);
     if (bind(sock_, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
@@ -83,13 +82,13 @@ FunctionSocket::FunctionSocket(mode_t mode, dev_t rdev, int fd)
   thread_ = thread(fn);
 }
 
-int FunctionSocket::getattr(struct stat *st) {
+int FDSocket::getattr(struct stat *st) {
   if (!ready_)
     return -ENOENT;
   return Socket::getattr(st);
 }
 
-int FunctionSocket::mknod() {
+int FDSocket::mknod() {
   if (ready_)
     return -EEXIST;
   ready_ = true;

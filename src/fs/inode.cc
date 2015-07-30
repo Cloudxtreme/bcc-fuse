@@ -21,10 +21,15 @@ using std::string;
 
 namespace bcc {
 
+Inode::Inode(InodeType type)
+    : parent_(nullptr), type_(type) {
+  mount_ = Mount::instance();
+}
+
 string Inode::path() const {
   if (parent_)
     return parent_->path(this);
-  return ".";
+  return mount_->mountpath();
 }
 
 }  // namespace bcc

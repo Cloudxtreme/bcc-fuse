@@ -90,6 +90,7 @@ void Dir::remove_child(const string &name) {
 }
 
 string Dir::path(const Inode *node) const {
+  // TODO: inefficient
   for (auto&& it : children_) {
     if (&*it.second == node)
       return Inode::path() + "/" + it.first;
@@ -179,7 +180,7 @@ int FunctionDir::load(const string &type) {
     add_child("error", make_unique<StatFile>(log_buf));
     return -1;
   }
-  add_child("fd", make_unique<FunctionSocket>(mode_, 0, fd));
+  add_child("fd", make_unique<FDSocket>(mode_, 0, fd));
   return 0;
 }
 
@@ -190,8 +191,7 @@ void FunctionDir::unload() {
 
 MapDir::MapDir(mode_t mode, int fd)
     : Dir(mode), fd_(fd) {
-  add_child("fd", make_unique<StatFile>(std::to_string(fd_) + "\n"));
-  add_child("link", make_unique<Link>(mode_, "/tmp/bcc-fd-" + std::to_string(fd_)));
+  add_child("fd", make_unique<FDSocket>(mode_, 0, fd_));
 }
 
 }  // namespace bcc
