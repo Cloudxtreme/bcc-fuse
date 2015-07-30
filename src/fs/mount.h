@@ -263,9 +263,12 @@ class StringFile : public File {
 
 class SourceFile : public StringFile {
  public:
-  SourceFile() : StringFile() {}
+  SourceFile() : StringFile(), dirty_(false) {}
+  int write(const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) override;
   int truncate(off_t newsize) override;
   int flush(struct fuse_file_info *fi) override;
+ private:
+  bool dirty_;
 };
 
 class StatFile : public File {

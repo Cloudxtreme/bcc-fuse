@@ -185,6 +185,7 @@ int FunctionDir::load(const string &type) {
 
 void FunctionDir::unload() {
   remove_child("fd");
+  remove_child("error");
 }
 
 MapDir::MapDir(mode_t mode, int fd)

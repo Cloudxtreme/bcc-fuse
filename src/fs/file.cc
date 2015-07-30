@@ -63,7 +63,13 @@ int StringFile::write(const char *buf, size_t size, off_t offset, struct fuse_fi
   return size;
 }
 
+int SourceFile::write(const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+  dirty_ = true;
+  return StringFile::write(buf, size, offset, fi);
+}
+
 int SourceFile::truncate(off_t newsize) {
+  dirty_ = true;
   if (ProgramDir *parent = dynamic_cast<ProgramDir *>(parent_))
     parent->unload();
   data_.resize(newsize);
@@ -71,6 +77,9 @@ int SourceFile::truncate(off_t newsize) {
 }
 
 int SourceFile::flush(struct fuse_file_info *fi) {
+  if (!dirty_)
+    return 0;
+  dirty_ = false;
   if (data_.empty() || data_ == "\n")
     return 0;
   if (ProgramDir *parent = dynamic_cast<ProgramDir *>(parent_)) {

@@ -195,7 +195,7 @@ int Mount::readlink(const char *path, char *buf, size_t size) {
 int Mount::ioctl(const char *path, int cmd, void *arg, struct fuse_file_info *fi,
                  unsigned int flags, void *data) {
   log("ioctl: %s\n", path);
-  return -EINVAL;
+  return 0;
 }
 
 int Mount::run(int argc, char **argv) {

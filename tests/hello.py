@@ -5,23 +5,48 @@ from builtins import input
 from bpf import BPF
 import os
 from subprocess import call
+import sys
 
 bcc = ctypes.CDLL("libbccclient.so")
 bcc.bcc_recv_fd.restype = int
 bcc.bcc_recv_fd.argtypes = [ctypes.c_char_p]
 
 os.mkdir("/tmp/bcc/foo")
+
+# First, create a valid C but invalid BPF program, check the error message
 with open("/tmp/bcc/foo/source", "w") as f:
-    f.write('int hello(void *ctx) { bpf_trace_printk("Hello, World\\n"); return 0; }')
+    f.write("""
+int hello(void *ctx) {
+    for (;;) bpf_trace_printk("Hello, World %d\\n");
+    return 0;
+}
+""")
+try:
+    with open("/tmp/bcc/foo/functions/hello/type", "w") as f:
+        f.write('kprobe')
+except:
+    with open("/tmp/bcc/foo/functions/hello/error") as f:
+        print("Verifier error:")
+        print(f.read())
+
+# Correct the error
+with open("/tmp/bcc/foo/source", "w") as f:
+    f.write("""
+int hello(void *ctx) {
+    bpf_trace_printk("Hello, World %d\\n");
+    return 0;
+}
+""")
+
 with open("/tmp/bcc/foo/functions/hello/type", "w") as f:
     f.write('kprobe')
 
-input("> ")
+# Pause here due to fuse race condition, TBD soon
+input("Begin: ")
 fd = bcc.bcc_recv_fd(b"/tmp/bcc/foo/functions/hello/fd")
 
-print("fd =", fd)
-if fd < 0:
-    raise Exception("invalid fd %d" % fd)
+if fd < 0: raise Exception("invalid fd %d" % fd)
+
 hello = BPF.Function(None, "hello", fd)
 BPF.attach_kprobe(hello, "sys_clone")
 try:
