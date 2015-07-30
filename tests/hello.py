@@ -11,7 +11,8 @@ bcc = ctypes.CDLL("libbccclient.so")
 bcc.bcc_recv_fd.restype = int
 bcc.bcc_recv_fd.argtypes = [ctypes.c_char_p]
 
-os.mkdir("/tmp/bcc/foo")
+if not os.path.exists("/tmp/bcc/foo"):
+    os.mkdir("/tmp/bcc/foo")
 
 # First, create a valid C but invalid BPF program, check the error message
 with open("/tmp/bcc/foo/source", "w") as f:
@@ -28,6 +29,7 @@ except:
     with open("/tmp/bcc/foo/functions/hello/error") as f:
         print("Verifier error:")
         print(f.read())
+        print("Retrying...")
 
 # Correct the error
 with open("/tmp/bcc/foo/source", "w") as f:

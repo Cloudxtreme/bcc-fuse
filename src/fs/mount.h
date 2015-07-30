@@ -176,6 +176,7 @@ class FunctionSocket : public Socket {
   int mknod();
  private:
   int fd_;
+  int sock_;
   std::thread thread_;
   bool ready_;
 };

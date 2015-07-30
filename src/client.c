@@ -22,9 +22,9 @@
 
 #include "client.h"
 
-int bcc_send_fd(const char *path, int fd) {
+int bcc_send_fd(int sock, int fd) {
   ssize_t size;
-  int cl = -1, sock = -1;
+  int cl = -1;
   union {
     struct cmsghdr cmsghdr;
     char control[CMSG_SPACE(sizeof(int))];
@@ -43,48 +43,29 @@ int bcc_send_fd(const char *path, int fd) {
     .msg_namelen = 0,
   };
 
-  sock = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (sock < 0) {
-    perror("socket");
-    goto cleanup;
-  }
-  struct sockaddr_un addr;
-  memset(&addr, 0, sizeof(addr));
-  addr.sun_family = AF_UNIX;
-  strncpy(addr.sun_path, path, sizeof(addr.sun_path));
+  for (;;) {
+    cl = accept(sock, NULL, NULL);
+    if (cl < 0) {
+      // ignore errors when the parent calls shutdown(sock)
+      if (errno != EINVAL)
+        perror("accept");
+      goto cleanup;
+    }
 
-  unlink(addr.sun_path);
-  if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-    perror("bind");
-    goto cleanup;
-  }
+    cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_len = CMSG_LEN(sizeof(fd));
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    *((int *)CMSG_DATA(cmsg)) = fd;
 
-  if (listen(sock, 1) < 0) {
-    perror("listen");
-    goto cleanup;
-  }
-
-  cl = accept(sock, NULL, NULL);
-  if (cl < 0) {
-    perror("accept");
-    goto cleanup;
-  }
-
-  cmsg = CMSG_FIRSTHDR(&msg);
-  cmsg->cmsg_len = CMSG_LEN(sizeof(fd));
-  cmsg->cmsg_level = SOL_SOCKET;
-  cmsg->cmsg_type = SCM_RIGHTS;
-  *((int *)CMSG_DATA(cmsg)) = fd;
-
-  size = sendmsg(cl, &msg, 0);
-  if (size < 0) {
-    perror("sendmsg");
-    goto cleanup;
+    size = sendmsg(cl, &msg, 0);
+    if (size < 0) {
+      perror("sendmsg");
+      //goto cleanup;
+    }
   }
 
 cleanup:
-  if (sock >= 0)
-    close(sock);
   if (cl >= 0)
     close(cl);
   return 0;

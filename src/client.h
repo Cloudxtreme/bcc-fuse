@@ -21,7 +21,7 @@
 extern "C" {
 #endif
 
-int bcc_send_fd(const char *path, int fd);
+int bcc_send_fd(int sock, int fd);
 int bcc_recv_fd(const char *path);
 
 #ifdef __cplusplus

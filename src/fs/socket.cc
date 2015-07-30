@@ -14,13 +14,17 @@
  * limitations under the License.
  */
 
+#include <cstring>
 #include <future>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include "client.h"
 #include "mount.h"
 #include "string_util.h"
 
+using std::string;
 using std::thread;
 
 namespace bcc {
@@ -37,14 +41,43 @@ int Socket::getattr(struct stat *st) {
 
 FunctionSocket::~FunctionSocket() {
   close(fd_);
+  if (sock_ >= 0) {
+    shutdown(sock_, SHUT_RDWR);
+    close(sock_);
+  }
   thread_.join();
 }
 
 FunctionSocket::FunctionSocket(mode_t mode, dev_t rdev, int fd)
-    : Socket(mode, rdev), fd_(fd), ready_(false) {
+    : Socket(mode, rdev), fd_(fd), sock_(-1), ready_(false) {
   auto fn = [&] () {
-    auto p = "/tmp/bcc/" + path();
-    bcc_send_fd(p.c_str(), fd_);
+
+    sock_ = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sock_ < 0) {
+      perror("socket");
+      return;
+    }
+
+    string p = "/tmp/bcc/" + path();
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, p.c_str(), sizeof(addr.sun_path));
+
+    unlink(addr.sun_path);
+    if (bind(sock_, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+      perror("bind");
+      close(sock_);
+      return;
+    }
+
+    if (listen(sock_, 1) < 0) {
+      perror("listen");
+      close(sock_);
+      return;
+    }
+
+    bcc_send_fd(sock_, fd_);
   };
   // todo: make this lighter weight - select loop and/or on-demand
   thread_ = thread(fn);
