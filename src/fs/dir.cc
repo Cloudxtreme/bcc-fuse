@@ -72,6 +72,7 @@ void Dir::add_child(const string &name, unique_ptr<Inode> node) {
     ++n_files_;
   else
     ++n_dirs_;
+  node->set_parent(this);
   children_[name] = move(node);
 }
 
@@ -82,6 +83,7 @@ void Dir::remove_child(const string &name) {
       --n_files_;
     else
       --n_dirs_;
+    it->second->set_parent(nullptr);
     children_.erase(it);
   }
 }
@@ -96,7 +98,7 @@ int RootDir::mkdir(const char *path, mode_t mode) {
 
 ProgramDir::ProgramDir(mode_t mode)
     : Dir(mode), bpf_module_(nullptr) {
-  add_child("source", make_unique<SourceFile>(this));
+  add_child("source", make_unique<SourceFile>());
   add_child("valid", make_unique<StatFile>("0\n"));
 }
 
@@ -145,7 +147,7 @@ void ProgramDir::unload() {
 
 FunctionDir::FunctionDir(mode_t mode, void *bpf_module, int id)
     : Dir(mode), bpf_module_(bpf_module), id_(id) {
-  add_child("type", make_unique<FunctionTypeFile>(this));
+  add_child("type", make_unique<FunctionTypeFile>());
 }
 
 int FunctionDir::load(const string &type) {

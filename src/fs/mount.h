@@ -134,17 +134,19 @@ class Inode {
   enum InodeType {
     dir_e, file_e, link_e, socket_e,
   };
-  explicit Inode(InodeType type) : type_(type) {}
+  Inode(InodeType type) : parent_(nullptr), type_(type) {}
   virtual ~Inode() {}
   Inode(const Inode &) = delete;
   InodeType type() const { return type_; }
   void set_type(InodeType type) { type_ = type; }
+  void set_parent(Dir *parent) { parent_ = parent; }
 
   virtual Inode * leaf(Path *path) { return this; }
 
   virtual int getattr(struct stat *st) = 0;
 
  protected:
+  Dir *parent_;
   InodeType type_;
 };
 
@@ -184,7 +186,7 @@ class Dir : public Inode {
 
 class RootDir : public Dir {
  public:
-  RootDir(mode_t mode) : Dir(mode) {}
+  explicit RootDir(mode_t mode) : Dir(mode) {}
   int mkdir(const char *name, mode_t mode);
 };
 
@@ -218,7 +220,7 @@ class FunctionDir : public Dir {
 
 class File : public Inode {
  public:
-  File();
+  File() : Inode(file_e) {}
   int getattr(struct stat *st) override;
   int open(struct fuse_file_info *fi);
   virtual int read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) { return -EACCES; }
@@ -247,11 +249,9 @@ class StringFile : public File {
 
 class SourceFile : public StringFile {
  public:
-  SourceFile(ProgramDir *parent) : StringFile(), parent_(parent) {}
+  SourceFile() : StringFile() {}
   int truncate(off_t newsize) override;
   int flush(struct fuse_file_info *fi) override;
- protected:
-  ProgramDir *parent_;
 };
 
 class StatFile : public File {
@@ -280,11 +280,9 @@ class FunctionFile : public File {
 
 class FunctionTypeFile : public StringFile {
  public:
-  FunctionTypeFile(FunctionDir *parent) : StringFile(), parent_(parent) {}
+  FunctionTypeFile() : StringFile() {}
   int truncate(off_t newsize) override;
   int flush(struct fuse_file_info *fi) override;
- protected:
-  FunctionDir *parent_;
 };
 
 }  // namespace bcc

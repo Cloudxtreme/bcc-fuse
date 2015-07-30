@@ -29,9 +29,6 @@ using std::thread;
 
 namespace bcc {
 
-File::File() : Inode(file_e) {
-}
-
 int File::getattr(struct stat *st) {
   st->st_mode = S_IFREG | 0444;
   st->st_nlink = 1;
@@ -71,7 +68,8 @@ int StringFile::write(const char *buf, size_t size, off_t offset, struct fuse_fi
 }
 
 int SourceFile::truncate(off_t newsize) {
-  parent_->unload();
+  if (ProgramDir *parent = dynamic_cast<ProgramDir *>(parent_))
+    parent->unload();
   data_.resize(newsize);
   return 0;
 }
@@ -79,9 +77,11 @@ int SourceFile::truncate(off_t newsize) {
 int SourceFile::flush(struct fuse_file_info *fi) {
   if (data_.empty() || data_ == "\n")
     return 0;
-  parent_->unload();
-  if (parent_->load(data_.c_str()))
-    return -EIO;
+  if (ProgramDir *parent = dynamic_cast<ProgramDir *>(parent_)) {
+    parent->unload();
+    if (parent->load(data_.c_str()))
+      return -EIO;
+  }
   return 0;
 }
 
@@ -108,7 +108,8 @@ int FunctionFile::read(char *buf, size_t size, off_t offset, struct fuse_file_in
 }
 
 int FunctionTypeFile::truncate(off_t newsize) {
-  parent_->unload();
+  if (FunctionDir *parent = dynamic_cast<FunctionDir *>(parent_))
+    parent->unload();
   data_.resize(newsize);
   return 0;
 }
@@ -116,9 +117,11 @@ int FunctionTypeFile::truncate(off_t newsize) {
 int FunctionTypeFile::flush(struct fuse_file_info *fi) {
   if (data_.empty() || data_ == "\n")
     return 0;
-  parent_->unload();
-  if (parent_->load(data_))
-    return -EIO;
+  if (FunctionDir *parent = dynamic_cast<FunctionDir *>(parent_)) {
+    parent->unload();
+    if (parent->load(data_))
+      return -EIO;
+  }
   return 0;
 }
 
