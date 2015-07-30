@@ -17,5 +17,6 @@ if (CMAKE_COMPILER_IS_GNUCC)
   endif()
 endif()
 
+install(TARGETS bcc-fuser RUNTIME DESTINATION bin)
 install(TARGETS bccclient LIBRARY DESTINATION lib${LIBSUFFIX})
 install(FILES client.h DESTINATION include/bcc)

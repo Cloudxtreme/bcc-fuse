@@ -3,13 +3,17 @@
 import ctypes
 from builtins import input
 from bpf import BPF
+import fcntl
 import os
 from subprocess import call
 import sys
+import time
 
 bcc = ctypes.CDLL("libbccclient.so")
 bcc.bcc_recv_fd.restype = int
 bcc.bcc_recv_fd.argtypes = [ctypes.c_char_p]
+
+call(["bcc-fuser", "-s", "/tmp/bcc"])
 
 if not os.path.exists("/tmp/bcc/foo"):
     os.mkdir("/tmp/bcc/foo")
@@ -44,14 +48,20 @@ with open("/tmp/bcc/foo/functions/hello/type", "w") as f:
     f.write('kprobe')
 
 # Pause here due to fuse race condition, TBD soon
-input("Begin: ")
+time.sleep(0.2)
 fd = bcc.bcc_recv_fd(b"/tmp/bcc/foo/functions/hello/fd")
 
 if fd < 0: raise Exception("invalid fd %d" % fd)
 
 hello = BPF.Function(None, "hello", fd)
-BPF.attach_kprobe(hello, "sys_clone")
-try:
-    call(["cat", "/sys/kernel/debug/tracing/trace_pipe"])
-except KeyboardInterrupt:
-    pass
+BPF.attach_kprobe(hello, "schedule")
+for i in range(0, 10): time.sleep(0.01)
+with open("/sys/kernel/debug/tracing/trace_pipe") as f:
+    fl = fcntl.fcntl(f.fileno(), fcntl.F_GETFL)
+    fcntl.fcntl(f.fileno(), fcntl.F_SETFL, fl | os.O_NONBLOCK)
+    try:
+        print(f.read())
+    except BlockingIOError:
+        pass
+
+call(["killall", "bcc-fuser"])
