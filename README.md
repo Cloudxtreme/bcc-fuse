@@ -1,27 +1,26 @@
 # BCC Fuse Filesystem
 
+This project contains code to mount a filesystem style interface to control
+[BCC][1].  A user will be able to write C code into files inside of the mounted
+directory, and the Fuse process will compile and load the code on behalf of the
+file owner.  The fuse agent will also keep the BPF programs loaded and active,
+so that the maps contained therein can be kept persistent and/or shared amonst
+multiple programs.
+
 ## Requirements
 
-Compile and install [BCC](https://github.com/iovisor/bcc) and all of its
-requirements.
+Compile and make install [BCC][1] and all of its requirements.
 
-## Examples
-
-Currently, all that can be done with this filesystem is mount and compile a
-BPF program. Use cases and explanation are TBD.
+## Setup
 
 ```
 git checkout https://github.com/iovisor/bcc-fuse
-cd bcc-fuse
-mkdir build
-cd build
+mkdir bcc-fuse/build
+cd bcc-fuse/build
 cmake ..
 make
-mkdir tmp
-sudo ./src/bcc-fuser -s tmp
-mkdir tmp/foo
-echo "int hello(void *ctx) { return 0; }" | sudo tee tmp/foo/source
-cat tmp/foo/valid
-# output should be "1"
-sudo fusermount -u tmp/foo
+sudo make install
+make test
 ```
+
+[1]: https://github.com/iovisor/bcc
