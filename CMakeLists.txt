@@ -8,8 +8,10 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
 enable_testing()
 
+find_package(PkgConfig)
 find_library(LIBBPF NAMES bpfprog)
-message("Found ${LIBBPF}")
+pkg_search_module(LIBBPF REQUIRED libbpfprog)
+
 find_package(fuse REQUIRED)
 set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Werror")
