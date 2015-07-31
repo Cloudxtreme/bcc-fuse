@@ -13,6 +13,9 @@ bcc = ctypes.CDLL("libbccclient.so")
 bcc.bcc_recv_fd.restype = int
 bcc.bcc_recv_fd.argtypes = [ctypes.c_char_p]
 
+if not os.path.exists("/tmp/bcc"):
+    os.mkdir("/tmp/bcc")
+
 call(["bcc-fuser", "-s", "/tmp/bcc"])
 
 if not os.path.exists("/tmp/bcc/foo"):

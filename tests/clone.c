@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-#include <bcc/client.h>
 #include <bcc/libbpf.h>
 #include <stdio.h>
+
+#include "client.h"
 
 int main(int argc, char **argv) {
   printf("fd = %d\n", bcc_recv_fd(argv[argc - 1]));

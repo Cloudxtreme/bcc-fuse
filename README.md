@@ -9,7 +9,17 @@ multiple programs.
 
 ## Requirements
 
-Compile and make install [BCC][1] and all of its requirements.
+### Compile and make install [BCC][1] and all of its requirements.
+
+### Install fuse development library
+
+```
+yum install fuse-devel
+```
+or
+```
+apt-get install libfuse-dev
+```
 
 ## Setup
 
@@ -17,7 +27,7 @@ Compile and make install [BCC][1] and all of its requirements.
 git checkout https://github.com/iovisor/bcc-fuse
 mkdir bcc-fuse/build
 cd bcc-fuse/build
-cmake ..
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr
 make
 sudo make install
 make test
