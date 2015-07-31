@@ -5,6 +5,7 @@ set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--exclude-libs=ALL")
 
 add_library(bccclient SHARED client.c)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${LIBBPF_INCLUDE_DIRS})
 
 add_executable(bcc-fuser main.cc fs/mount.cc fs/inode.cc fs/dir.cc fs/file.cc fs/link.cc fs/socket.cc)
 target_link_libraries(bcc-fuser ${FUSE_LIBRARIES} ${LIBBPF} bccclient pthread)
