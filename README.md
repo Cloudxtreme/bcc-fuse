@@ -24,7 +24,7 @@ apt-get install libfuse-dev
 ## Setup
 
 ```
-git checkout https://github.com/iovisor/bcc-fuse
+git clone https://github.com/iovisor/bcc-fuse
 mkdir bcc-fuse/build
 cd bcc-fuse/build
 cmake .. -DCMAKE_INSTALL_PREFIX=/usr
