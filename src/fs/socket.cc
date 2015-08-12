@@ -30,7 +30,7 @@ using std::thread;
 namespace bcc {
 
 Socket::Socket(mode_t mode, dev_t rdev)
-  : Inode(socket_e), rdev_(rdev) {
+  : Inode(socket_e, mode), rdev_(rdev) {
 }
 
 int Socket::getattr(struct stat *st) {
@@ -63,7 +63,7 @@ FDSocket::FDSocket(mode_t mode, dev_t rdev, int fd)
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, path().c_str(), sizeof(addr.sun_path));
 
-    unlink(addr.sun_path);
+    ::unlink(addr.sun_path);
     if (bind(sock_, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
       perror("bind");
       close(sock_);

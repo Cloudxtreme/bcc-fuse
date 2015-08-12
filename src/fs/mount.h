@@ -57,6 +57,9 @@ class Mount {
   static int mknod_(const char *path, mode_t mode, dev_t rdev) {
     return instance()->mknod(path, mode, rdev);
   }
+  static int create_(const char *path, mode_t mode, struct fuse_file_info *fi) {
+    return instance()->create(path, mode, fi);
+  }
   static int unlink_(const char *path) {
     return instance()->unlink(path);
   }
@@ -91,6 +94,8 @@ class Mount {
               struct fuse_file_info *fi);
   int mkdir(const char *path, mode_t mode);
   int mknod(const char *path, mode_t mode, dev_t rdev);
+  int mknod(const char *path, mode_t mode, struct fuse_file_info *fi);
+  int create(const char *path, mode_t mode, struct fuse_file_info *fi);
   int unlink(const char *path);
   int open(const char *path, struct fuse_file_info *fi);
   int read(const char *path, char *buf, size_t size, off_t offset,
@@ -138,11 +143,13 @@ class Inode {
   enum InodeType {
     dir_e, file_e, link_e, socket_e,
   };
-  explicit Inode(InodeType type);
+  Inode(InodeType type, mode_t mode = 0644);
   virtual ~Inode() {}
   Inode(const Inode &) = delete;
+  mode_t mode() const { return mode_; }
   InodeType type() const { return type_; }
   void set_type(InodeType type) { type_ = type; }
+  Dir *parent() const { return parent_; }
   void set_parent(Dir *parent) { parent_ = parent; }
   void set_mount(Mount *mount) { mount_ = mount; }
   std::string path() const;
@@ -150,9 +157,10 @@ class Inode {
   virtual Inode * leaf(Path *path) { return this; }
 
   virtual int getattr(struct stat *st) = 0;
+  virtual int unlink() { return 0; }
 
   template <typename... Args>
-  void log(const char *fmt, Args&&... args) {
+  void log(const char *fmt, Args&&... args) const {
     mount_->log(fmt, std::forward<Args>(args)...);
   }
 
@@ -160,6 +168,7 @@ class Inode {
   Mount *mount_;
   Dir *parent_;
   InodeType type_;
+  mode_t mode_;
 };
 
 class Link : public Inode {
@@ -199,15 +208,16 @@ class Dir : public Inode {
   void add_child(const std::string &name, std::unique_ptr<Inode> node);
   void remove_child(const std::string &name);
   int getattr(struct stat *st) override;
-  int readdir(void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi);
+  virtual int readdir(void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi);
   virtual int mkdir(const char *name, mode_t mode) { return -EACCES; }
   virtual int mknod(const char *name, mode_t mode, dev_t rdev);
+  virtual int create(const char *name, mode_t mode, struct fuse_file_info *fi) { return -ENOTSUP; }
+  virtual int unlink(const char *name);
   std::string path(const Inode *node) const;
  protected:
   std::map<std::string, std::unique_ptr<Inode>> children_;
   size_t n_files_;
   size_t n_dirs_;
-  mode_t mode_;
 };
 
 class RootDir : public Dir {
@@ -228,9 +238,18 @@ class ProgramDir : public Dir {
 
 class MapDir : public Dir {
  public:
-  MapDir(mode_t mode, int fd);
+  MapDir(mode_t mode, void *bpf_module_, int id);
+  int getattr(struct stat *st) override;
+  int readdir(void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) override;
+  int create(const char *name, mode_t mode, struct fuse_file_info *fi) override;
+  void * mod() const { return bpf_module_; }
+  int map_id() const { return id_; }
+  int map_fd() const;
  private:
-  int fd_;
+  int refresh();
+  void *bpf_module_;
+  int id_;
+  uint64_t last_ts_;
 };
 
 class FunctionDir : public Dir {
@@ -248,7 +267,7 @@ class File : public Inode {
  public:
   File() : Inode(file_e) {}
   int getattr(struct stat *st) override;
-  int open(struct fuse_file_info *fi);
+  virtual int open(struct fuse_file_info *fi);
   virtual int read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) { return -EACCES; }
   virtual int write(const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) { return -EACCES; }
   virtual int truncate(off_t newsize) { return -EACCES; }
@@ -300,6 +319,37 @@ class FunctionTypeFile : public StringFile {
   FunctionTypeFile() : StringFile() {}
   int truncate(off_t newsize) override;
   int flush(struct fuse_file_info *fi) override;
+};
+
+class MapDumpFile : public File {
+ public:
+  MapDumpFile(void *bpf_module, int id);
+  int read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) override;
+  size_t size() const override;
+ private:
+  void *bpf_module_;
+  int id_;
+  int fd_;
+  size_t key_size_;
+  size_t leaf_size_;
+};
+
+class MapEntry : public StringFile {
+ public:
+  MapEntry(std::unique_ptr<uint8_t[]> key, size_t leaf_size);
+  int getattr(struct stat *st) override;
+  int write(const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) override;
+  int open(struct fuse_file_info *fi) override;
+  int read(char *buf, size_t size, off_t offset, struct fuse_file_info *fi) override;
+  int truncate(off_t newsize) override;
+  int flush(struct fuse_file_info *fi) override;
+  int unlink() override;
+ private:
+  int refresh();
+  std::unique_ptr<uint8_t[]> key_;
+  size_t key_size_;
+  size_t leaf_size_;
+  bool dirty_;
 };
 
 }  // namespace bcc

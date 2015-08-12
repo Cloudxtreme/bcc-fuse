@@ -21,8 +21,8 @@ using std::string;
 
 namespace bcc {
 
-Inode::Inode(InodeType type)
-    : parent_(nullptr), type_(type) {
+Inode::Inode(InodeType type, mode_t mode)
+    : parent_(nullptr), type_(type), mode_(mode) {
   mount_ = Mount::instance();
 }
 

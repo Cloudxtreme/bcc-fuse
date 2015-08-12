@@ -39,6 +39,7 @@ Mount::Mount() : flags_(0) {
   oper_->readdir = readdir_;
   oper_->mkdir = mkdir_;
   oper_->mknod = mknod_;
+  oper_->create = create_;
   oper_->unlink = unlink_;
   oper_->open = open_;
   oper_->read = read_;
@@ -110,13 +111,29 @@ int Mount::mknod(const char *path, mode_t mode, dev_t rdev) {
   return -ENOTDIR;
 }
 
+int Mount::create(const char *path, mode_t mode, struct fuse_file_info *fi) {
+  log("create: %s\n", path);
+  Path p(path);
+  Inode *leaf = root_->leaf(&p);
+  p.consume();
+  if (!p.cur())
+    return -EEXIST;
+  if (p.next())
+    return -ENOENT;
+  if (Dir *dir = dynamic_cast<Dir *>(leaf))
+    return dir->create(p.cur(), mode, fi);
+  return -ENOTDIR;
+}
+
 int Mount::unlink(const char *path) {
   log("unlink: %s\n", path);
   Path p(path);
   Inode *leaf = root_->leaf(&p);
   if (!leaf || p.next())
     return -ENOENT;
-  return -EINVAL;
+  if (Dir *dir = dynamic_cast<MapDir *>(leaf->parent()))
+    return dir->unlink(p.cur());
+  return -EPERM;
 }
 
 int Mount::open(const char *path, struct fuse_file_info *fi) {

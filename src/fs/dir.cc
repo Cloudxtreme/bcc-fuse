@@ -19,6 +19,7 @@
 #include <string>
 #include <bcc/bpf_common.h>
 #include <bcc/libbpf.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "mount.h"
@@ -32,7 +33,7 @@ using std::unique_ptr;
 namespace bcc {
 
 Dir::Dir(mode_t mode)
-    : Inode(dir_e), n_files_(0), n_dirs_(0), mode_(mode) {
+    : Inode(dir_e, mode), n_files_(0), n_dirs_(0) {
 }
 
 Inode * Dir::leaf(Path *path) {
@@ -65,6 +66,20 @@ int Dir::mknod(const char *name, mode_t mode, dev_t rdev) {
   else
     return -EPERM;
   return 0;
+}
+
+int Dir::unlink(const char *name) {
+  auto it = children_.find(name);
+  if (it == children_.end()) return -ENOENT;
+  if (it->second->mode() & S_IWUSR) {
+    if (int rc = it->second->unlink()) {
+      remove_child(name);
+      return rc;
+    }
+    remove_child(name);
+    return 0;
+  }
+  return -EPERM;
 }
 
 void Dir::add_child(const string &name, unique_ptr<Inode> node) {
@@ -119,7 +134,7 @@ ProgramDir::~ProgramDir() {
 int ProgramDir::load(const char *text) {
   StatFile *validf = dynamic_cast<StatFile *>(&*children_["valid"]);
   if (!validf) return 1;
-  void *m = bpf_module_create_from_string(text, 0);
+  void *m = bpf_module_create_c_from_string(text, 0);
   if (!m) {
     validf->set_data("0\n");
     return 1;
@@ -139,7 +154,7 @@ int ProgramDir::load(const char *text) {
   size_t num_tables = bpf_num_tables(bpf_module_);
   for (size_t i = 0; i < num_tables; ++i) {
     maps->add_child(bpf_table_name(bpf_module_, i),
-                    make_unique<MapDir>(mode_, bpf_table_fd_id(bpf_module_, i)));
+                    make_unique<MapDir>(mode_, bpf_module_, i));
   }
   add_child("maps", move(maps));
   return 0;
@@ -189,9 +204,78 @@ void FunctionDir::unload() {
   remove_child("error");
 }
 
-MapDir::MapDir(mode_t mode, int fd)
-    : Dir(mode), fd_(fd) {
-  add_child("fd", make_unique<FDSocket>(mode_, 0, fd_));
+MapDir::MapDir(mode_t mode, void *bpf_module, int id)
+    : Dir(mode), bpf_module_(bpf_module), id_(id), last_ts_(0) {
+  add_child("fd", make_unique<FDSocket>(mode_, 0, map_fd()));
+  add_child("dump", make_unique<MapDumpFile>(bpf_module_, id_));
+}
+
+int MapDir::map_fd() const {
+  return bpf_table_fd_id(bpf_module_, id_);
+}
+
+int MapDir::getattr(struct stat *st) {
+  if (int rc = refresh())
+    return rc;
+  return Dir::getattr(st);
+}
+
+#define REFRESH_TIME_NSEC (1 * 1e9)
+int MapDir::refresh() {
+  // Once a second, refresh the file list in the directory.
+  // Since the map api is unordered, currently we need to wipe the list of
+  // children and build it from scratch each time. However, objects that have
+  // already been inserted into the map should not be removed, since a client
+  // may have it open(). So, keep the object pointer alive and move it from one
+  // list epoch to the other.
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  uint64_t new_ts = (uint64_t)ts.tv_sec * 1e9 + ts.tv_nsec;
+  if (new_ts < last_ts_ + REFRESH_TIME_NSEC)
+    return 0;
+  log("MapDir::refresh\n");
+  last_ts_ = new_ts;
+  auto old_children = move(children_);
+  children_["fd"] = move(old_children["fd"]);
+  children_["dump"] = move(old_children["dump"]);
+  n_dirs_ = 0;
+  n_files_ = 2;
+  int fd = map_fd();
+  size_t key_size = bpf_table_key_size_id(bpf_module_, id_);
+  size_t leaf_size = bpf_table_leaf_size_id(bpf_module_, id_);
+  unique_ptr<uint8_t[]> key(new uint8_t[key_size]);
+  unique_ptr<char[]> key_str(new char[key_size * 8]);
+  memset(&key[0], 0, key_size);
+  while (bpf_get_next_key(fd, &key[0], &key[0]) == 0) {
+    if (bpf_table_key_snprintf(bpf_module_, id_, &key_str[0], key_size * 8, &key[0]))
+      return -EIO;
+    auto it = old_children.find(&key_str[0]);
+    unique_ptr<uint8_t[]> k(new uint8_t[key_size]);
+    memcpy(&k[0], &key[0], key_size);
+    if (it == old_children.end())
+      add_child(&key_str[0], make_unique<MapEntry>(move(k), leaf_size));
+    else
+      add_child(&key_str[0], move(it->second));
+  }
+  return 0;
+}
+
+int MapDir::readdir(void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
+  if (int rc = refresh())
+    return rc;
+  return Dir::readdir(buf, filler, offset, fi);
+}
+
+int MapDir::create(const char *name, mode_t mode, struct fuse_file_info *fi) {
+  size_t key_size = bpf_table_key_size_id(bpf_module_, id_);
+  size_t leaf_size = bpf_table_leaf_size_id(bpf_module_, id_);
+  unique_ptr<uint8_t[]> key(new uint8_t[key_size]);
+  if (bpf_table_key_sscanf(bpf_module_, id_, name, &key[0]))
+    return -EIO;
+  auto ent = make_unique<MapEntry>(move(key), leaf_size);
+  fi->fh = (uintptr_t) &*ent;
+  add_child(name, move(ent));
+  return 0;
 }
 
 }  // namespace bcc
