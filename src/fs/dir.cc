@@ -233,7 +233,6 @@ int MapDir::refresh() {
   uint64_t new_ts = (uint64_t)ts.tv_sec * 1e9 + ts.tv_nsec;
   if (new_ts < last_ts_ + REFRESH_TIME_NSEC)
     return 0;
-  log("MapDir::refresh\n");
   last_ts_ = new_ts;
   auto old_children = move(children_);
   children_["fd"] = move(old_children["fd"]);
