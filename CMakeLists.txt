@@ -3,8 +3,11 @@
 cmake_minimum_required(VERSION 2.8.7)
 
 project(bcc-fuse)
+
+set(PROJECT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(PROJECT_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 set(CMAKE_BUILD_TYPE Release)
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/Modules/")
 
 enable_testing()
 
