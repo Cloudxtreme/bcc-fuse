@@ -2,7 +2,6 @@
 
 import ctypes
 from builtins import input
-from bpf import BPF
 import fcntl
 import os
 from subprocess import call
@@ -58,16 +57,5 @@ time.sleep(0.2)
 fd = bcc.bcc_recv_fd(b"/run/bcc/foo/functions/hello/fd")
 
 if fd < 0: raise Exception("invalid fd %d" % fd)
-
-hello = BPF.Function(None, "hello", fd)
-BPF.attach_kprobe(hello, "schedule")
-for i in range(0, 10): time.sleep(0.01)
-with open("/sys/kernel/debug/tracing/trace_pipe") as f:
-    fl = fcntl.fcntl(f.fileno(), fcntl.F_GETFL)
-    fcntl.fcntl(f.fileno(), fcntl.F_SETFL, fl | os.O_NONBLOCK)
-    try:
-        print(f.read())
-    except BlockingIOError:
-        pass
 
 call(["killall", "bcc-fuser"])

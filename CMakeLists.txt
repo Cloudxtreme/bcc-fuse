@@ -33,8 +33,9 @@ endif()
 message(STATUS "Revision is ${REVISION}")
 
 find_package(PkgConfig)
-find_library(LIBBPF NAMES bpfprog)
-pkg_search_module(LIBBPF REQUIRED libbpfprog)
+find_library(LIBBCC NAMES bcc)
+pkg_search_module(LIBBCC REQUIRED libbcc)
+message(STATUS "Found libbcc ${LIBBCC_LIBRARIES}")
 
 find_package(fuse REQUIRED)
 set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror")
