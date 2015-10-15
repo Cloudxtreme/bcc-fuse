@@ -63,6 +63,8 @@ int bcc_send_fd(int sock, int fd) {
       perror("sendmsg");
       //goto cleanup;
     }
+    close(cl);
+    cl = -1;
   }
 
 cleanup:
